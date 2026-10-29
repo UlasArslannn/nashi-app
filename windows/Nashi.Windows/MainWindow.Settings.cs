@@ -12,7 +12,8 @@ public sealed partial class MainWindow
     private TrayHost? tray;private bool quitting;
     private void SetupDesktop()
     {
-        globalDrag=new(this,preferences,OnGlobalDrop,OpenCopiedLink);
+        globalDrag=new(this,preferences,OnGlobalDrop,OpenCopiedLink,ShowMain);
+        if(preferences.Value.Enabled&&globalDrag is {LinkShortcutRegistered:false} or {ShowShortcutRegistered:false})L10n.SetText(status,"Another app is using a Nashi shortcut (Ctrl+Shift+D or Ctrl+Shift+N). Nashi keeps retrying.");
         try{tray=new(this,ShowMain,TrayMenu);}catch(InvalidOperationException error){L10n.SetText(status,error.Message);}
         Closing+=(_,e)=>{if(!e.Cancel&&tray is not null&&preferences.Value.KeepInTray&&!quitting){e.Cancel=true;Hide();}};
         // Without a tray icon (Explorer not ready at sign-in), a hidden Nashi could not be reached.

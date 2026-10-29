@@ -40,7 +40,7 @@ internal static class GlobalGestureChecks
         });
         var discoveryLimit=DateTime.UtcNow.AddSeconds(25);while(!discovery.IsCompleted&&DateTime.UtcNow<discoveryLimit)DesktopInput.Pump(30);if(!discovery.IsCompleted){DesktopCapture.Save(Path.Combine(root,"explorer-discovery.png"));throw new TimeoutException("Explorer UI Automation did not respond.");}if(discovery.IsFaulted)DesktopCapture.Save(Path.Combine(root,"explorer-discovery.png"));var fixture=discovery.GetAwaiter().GetResult();var handle=fixture.Handle;var bounds=fixture.Bounds;if(bounds.IsEmpty)throw new Exception("Explorer's source file has no visible bounds.");
         var settings=new PreferencesStore(Path.Combine(root,"Gesture preferences"));string? selected=null;string[]? received=null;
-        using var controller=new GlobalDragController(owner,settings,(id,data,hint)=>{selected=id;received=data.GetData(DataFormats.FileDrop) as string[];},()=>selected="link-shortcut");
+        using var controller=new GlobalDragController(owner,settings,(id,data,hint)=>{selected=id;received=data.GetData(DataFormats.FileDrop) as string[];},()=>selected="link-shortcut",()=>selected="show-shortcut");
         void Drag(Key modifier,string mode,string expected)
         {
             phase="dragging "+mode;selected=null;string? state=null;SetForegroundWindow(handle);DesktopInput.Pump(200);var start=new Point(bounds.Left+bounds.Width/2,bounds.Top+bounds.Height/2);

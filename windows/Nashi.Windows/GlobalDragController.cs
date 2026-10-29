@@ -27,19 +27,35 @@ public sealed class GlobalDragController:IDisposable
     /// Those drags belong to window management and never carry files.
     private static bool InMoveSize(){var info=new GuiThreadInfo{Size=Marshal.SizeOf<GuiThreadInfo>()};return GetGUIThreadInfo(0,ref info)&&(info.Flags&0x2)!=0;}
     [DllImport("oleacc.dll")]private static extern int AccessibleObjectFromPoint(NativePoint point,[MarshalAs(UnmanagedType.Interface)]out object accessible,[MarshalAs(UnmanagedType.Struct)]out object child);
-    private readonly Window owner;private readonly PreferencesStore preferences;private readonly Action<string,IDataObject,string?> dropped;private readonly Action link;private readonly System.Windows.Threading.DispatcherTimer timer;
-    private NativePoint start;private bool down,opened;private Task<string?>? hint;private GlobalDropWheel? wheel;private HwndSource? source;private IntPtr handle;private bool? shortcutEnabled;
+    private readonly Window owner;private readonly PreferencesStore preferences;private readonly Action<string,IDataObject,string?> dropped;private readonly Action link;private readonly Action show;private readonly System.Windows.Threading.DispatcherTimer timer;
+    private NativePoint start;private bool down,opened;private Task<string?>? hint;private GlobalDropWheel? wheel;private HwndSource? source;private IntPtr handle;private bool? shortcutEnabled;private int retryTicks;
     internal GlobalDropWheel? ActiveWheel=>wheel;
     public bool LinkShortcutRegistered{get;private set;}
+    public bool ShowShortcutRegistered{get;private set;}
     private bool OwnerAvailable=>DesktopGeometry.IsInteractive(owner);
-    public GlobalDragController(Window owner,PreferencesStore preferences,Action<string,IDataObject,string?> dropped,Action link)
+    public GlobalDragController(Window owner,PreferencesStore preferences,Action<string,IDataObject,string?> dropped,Action link,Action show)
     {
-        this.owner=owner;this.preferences=preferences;this.dropped=dropped;this.link=link;timer=new(){Interval=TimeSpan.FromMilliseconds(40)};timer.Tick+=(_,_)=>Poll();
+        this.owner=owner;this.preferences=preferences;this.dropped=dropped;this.link=link;this.show=show;timer=new(){Interval=TimeSpan.FromMilliseconds(40)};timer.Tick+=(_,_)=>Poll();
         if(new WindowInteropHelper(owner).Handle!=IntPtr.Zero)Register();else owner.SourceInitialized+=(_,_)=>Register();timer.Start();
     }
     private void Register(){handle=new WindowInteropHelper(owner).Handle;source=HwndSource.FromHwnd(handle);source.AddHook(Hook);UpdateShortcut();}
-    private void UpdateShortcut(){if(handle==IntPtr.Zero)return;var enabled=preferences.Value.Enabled;if(shortcutEnabled==enabled)return;shortcutEnabled=enabled;if(LinkShortcutRegistered)UnregisterHotKey(handle,7701);LinkShortcutRegistered=enabled&&RegisterHotKey(handle,7701,0x4000|0x2|0x4,0x44);}
-    private IntPtr Hook(IntPtr window,int message,IntPtr w,IntPtr l,ref bool handled){if(message==0x0312&&w.ToInt32()==7701){if(preferences.Value.Enabled&&OwnerAvailable)link();handled=true;}return IntPtr.Zero;}
+    private void UpdateShortcut()
+    {
+        if(handle==IntPtr.Zero)return;var enabled=preferences.Value.Enabled;
+        // Another app can own a chord at startup and release it later (or the other way
+        // around), so a failed registration is retried every ~10 s instead of only when
+        // the preference changes.
+        var missing=enabled&&(!LinkShortcutRegistered||!ShowShortcutRegistered);
+        if(shortcutEnabled==enabled&&!missing)return;
+        if(shortcutEnabled==enabled&&++retryTicks<250)return;
+        retryTicks=0;shortcutEnabled=enabled;
+        if(LinkShortcutRegistered){UnregisterHotKey(handle,7701);LinkShortcutRegistered=false;}
+        if(ShowShortcutRegistered){UnregisterHotKey(handle,7702);ShowShortcutRegistered=false;}
+        if(!enabled)return;
+        LinkShortcutRegistered=RegisterHotKey(handle,7701,0x4000|0x2|0x4,0x44);
+        ShowShortcutRegistered=RegisterHotKey(handle,7702,0x4000|0x2|0x4,0x4E);
+    }
+    private IntPtr Hook(IntPtr window,int message,IntPtr w,IntPtr l,ref bool handled){if(message==0x0312&&w.ToInt32() is 7701 or 7702){if(preferences.Value.Enabled&&OwnerAvailable){if(w.ToInt32()==7701)link();else show();}handled=true;}return IntPtr.Zero;}
     private static bool Held(int key)=>(GetAsyncKeyState(key)&0x8000)!=0;
     private string Chord(){var parts=new List<string>();if(Held(0x11))parts.Add("Ctrl");if(Held(0x10))parts.Add("Shift");if(Held(0x12))parts.Add("Alt");return string.Join('+',parts);}
     private void Poll()
@@ -65,7 +81,7 @@ public sealed class GlobalDragController:IDisposable
             }
         }catch(ElementNotAvailableException){}catch(InvalidOperationException){}catch(COMException){}catch(System.Reflection.TargetInvocationException){}catch(MissingMethodException){}return null;
     }
-    public void Dispose(){timer.Stop();wheel?.Close();if(handle!=IntPtr.Zero)UnregisterHotKey(handle,7701);source?.RemoveHook(Hook);}
+    public void Dispose(){timer.Stop();wheel?.Close();if(handle!=IntPtr.Zero){UnregisterHotKey(handle,7701);UnregisterHotKey(handle,7702);}source?.RemoveHook(Hook);}
 }
 
 internal sealed class GlobalDropWheel:Window
