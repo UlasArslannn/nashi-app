@@ -8,6 +8,7 @@ public sealed partial class MainWindow
     private readonly TextBlock webSummary=new(){Text="Paste a public media link to begin.",TextWrapping=TextWrapping.Wrap,Margin=new(4,12,4,12)};
     private readonly ComboBox webQuality=new(){ItemsSource=new[]{"Best available","Up to 1080p","Up to 720p"},SelectedIndex=0};
     private readonly StackPanel photoChoices=new();private readonly HashSet<int> selectedWebPhotos=[];private CancellationTokenSource? inspection;private string? inspectedLink,webPayloadKind;
+    private int? SelectedHeight=>webQuality.SelectedIndex switch{1=>1080,2=>720,_=>null};
     private void BuildWebOptions()
     {
         var buttons=new WrapPanel();buttons.Children.Add(Button("Find media",async()=>await InspectWebLinkAsync()));buttons.Children.Add(Button("Paste link",()=>{try{link.Text=Clipboard.GetText();}catch(Exception e)when(ClipboardImport.IsClipboardError(e)){webSummary.Text="Clipboard is busy. Try Paste again.";}}));webContent.Children.Add(buttons);webContent.Children.Add(webSummary);

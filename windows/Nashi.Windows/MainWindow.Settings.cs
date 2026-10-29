@@ -30,7 +30,20 @@ public sealed partial class MainWindow
     private void ShowSettings(){new SettingsWindow(this,preferences,ApplyPreferences,()=>CheckUpdatesAsync(true),library).ShowDialog();appearance.SelectedItem=char.ToUpper(library.Appearance[0])+library.Appearance[1..];}
     private void OpenCopiedLink()
     {
-        if(busy)return;try{var payload=WebMediaPayload.Parse(Clipboard.GetText());if(payload is null){L10n.SetText(status,"Copy a public media link first.");return;}Show();WindowState=WindowState.Normal;Activate();link.Text=payload.Url;SetDownloadKind(payload);OpenDownload();}catch(Exception error)when(ClipboardImport.IsClipboardError(error)){L10n.SetText(status,"Clipboard is busy. Try again.");}
+        try{var payload=WebMediaPayload.Parse(Clipboard.GetText());if(payload is null){L10n.SetText(status,"Copy a public media link first.");return;}
+        if(busy){EnqueueDownload(payload.Url,DefaultKind(payload),SelectedHeight);return;}
+        Show();WindowState=WindowState.Normal;Activate();link.Text=payload.Url;SetDownloadKind(payload);OpenDownload();}catch(Exception error)when(ClipboardImport.IsClipboardError(error)){L10n.SetText(status,"Clipboard is busy. Try again.");}
+    }
+    private static string DefaultKind(WebMediaPayload payload)=>payload.Kind switch{"instagramPhotos"=>"photos","image"=>"image",_=>"video"};
+    private void EnqueueDownload(string url,string kind,int? height)
+    {
+        downloadQueue.Enqueue((url,kind,height));activeToast?.SetQueued(downloadQueue.Count);L10n.SetText(status,"Added to the download queue.");
+    }
+    private async void ProcessDownloadQueue()
+    {
+        if(busy||downloadQueue.Count==0)return;var next=downloadQueue.Dequeue();activeToast?.SetQueued(downloadQueue.Count);
+        if(WebMediaPayload.Parse(next.Url) is {} payload){link.Text=payload.Url;SetDownloadKind(payload,next.Kind);}else link.Text=next.Url;
+        await RunAsync((destination,p,t)=>new WebDownload(tools).DownloadAsync(next.Url,next.Kind,destination,p,t,next.Height),"Download "+next.Kind,preferences.Value.DownloadFolder);
     }
     private void SetDownloadKind(WebMediaPayload payload,string? chosen=null)
     {
@@ -38,10 +51,15 @@ public sealed partial class MainWindow
     }
     private void OnGlobalDrop(string action,IDataObject data,string? hint)
     {
-        if(busy)return;var paths=data.GetData(DataFormats.FileDrop) as string[];var payload=DragPayload.Parse(data,hint);
+        var paths=data.GetData(DataFormats.FileDrop) as string[];var payload=DragPayload.Parse(data,hint);
         Dispatcher.BeginInvoke(async()=>
         {
-            if(busy)return;
+            if(busy)
+            {
+                // Dropped links queue behind the running operation; file edits still need the UI free.
+                if(payload is not null){var chosen=action.StartsWith("download:",StringComparison.Ordinal)?action[9..]:"auto";EnqueueDownload(payload.Url,chosen=="auto"?DefaultKind(payload):chosen,SelectedHeight);}
+                return;
+            }
             if(paths is {Length:>0}&&!action.StartsWith("download:",StringComparison.Ordinal)){files.Clear();Add(paths);if(action.StartsWith("convert:",StringComparison.Ordinal))await EditAsync(new(action,"Convert","↗"));else if(new[]{"share","float","copy","move","copyPath","terminal"}.Contains(action))await PerformFileAction(action,paths);else await EditAsync(new(action,FeatureCatalog.ToolNames.GetValueOrDefault(action,action),"✦"));}
             else if(payload is not null){link.Text=payload.Url;SetDownloadKind(payload,action.StartsWith("download:",StringComparison.Ordinal)?action[9..]:null);Show();WindowState=WindowState.Normal;Activate();OpenDownload();}
         });
