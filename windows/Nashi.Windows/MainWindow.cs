@@ -118,7 +118,9 @@ public sealed partial class MainWindow:Window
     public static Button Button(string title,Action action){var button=L10n.Content(new Button{Content=title});button.Click+=(_,_)=>action();return button;}
     internal static Button Primary(string title,Action action){var button=Button(title,action);button.Background=Theme.Primary;button.Foreground=new SolidColorBrush(Color.FromRgb(43,54,28));return button;}
     public static void OpenUrl(string url)=>Process.Start(new ProcessStartInfo(url){UseShellExecute=true});
-    public static void Reveal(string path){var info=new ProcessStartInfo("explorer.exe"){UseShellExecute=false};info.ArgumentList.Add("/select,"+Path.GetFullPath(path));Process.Start(info);}
+    // ArgumentList would quote the whole "/select,path" token; Explorer then ignores it and
+    // opens its default folder, so the switch and the quoted path are composed by hand.
+    public static void Reveal(string path){var info=new ProcessStartInfo("explorer.exe"){UseShellExecute=false,Arguments="/select,\""+Path.GetFullPath(path)+"\""};Process.Start(info);}
     private void Choose()
     {
         if(busy)return;
